@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Vie En Rose — 不完全な予測による最適行動と予測モデルの最適化志向</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #f5f3f0;
+    color: #3a3a4a;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .container {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    height: 100vh;
+    gap: 0;
+  }
+  /* Left: Canvas */
+  .canvas-wrap {
+    position: relative;
+    background: #faf8f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    background: #faf8f5;
+  }
+  .canvas-label {
+    position: absolute;
+    top: 12px; left: 16px;
+    font-size: 13px;
+    color: #8a8a9a;
+  }
+  /* Right panel */
+  .panel {
+    background: #f0eee8;
+    border-left: 1px solid #d8d4cc;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .panel-title {
+    padding: 12px 16px 8px;
+    font-size: 14px;
+    color: #5a5a6a;
+    border-bottom: 1px solid #d8d4cc;
+    flex-shrink: 0;
+  }
+  .section {
+    padding: 10px 16px;
+    border-bottom: 1px solid #ddd8d0;
+    flex-shrink: 0;
+  }
+  .section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #888898;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+  /* Theta bars */
+  .theta-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .theta-label {
+    width: 30px;
+    color: #666688;
+  }
+  .bar-wrap {
+    flex: 1;
+    height: 14px;
+    background: #e4e0d8;
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+    margin: 0 6px;
+  }
+  .bar-true {
+    position: absolute;
+    height: 100%;
+    background: rgba(70, 120, 220, 0.35);
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .bar-est {
+    position: absolute;
+    height: 100%;
+    background: rgba(220, 80, 140, 0.5);
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .theta-val {
+    width: 80px;
+    font-size: 10px;
+    color: #6a6a7a;
+    text-align: right;
+  }
+  /* Error graph */
+  .error-graph {
+    height: 60px;
+    background: #e8e4dc;
+    border-radius: 4px;
+  }
+  /* Action table */
+  .action-table {
+    font-size: 10px;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .action-table th {
+    color: #777788;
+    text-align: left;
+    padding: 2px 4px;
+    font-weight: normal;
+  }
+  .action-table td {
+    padding: 2px 4px;
+    color: #5a5a6a;
+  }
+  .action-table tr.chosen {
+    color: #d05080;
+  }
+  .action-table tr.chosen td {
+    color: #d05080;
+  }
+  /* Log */
+  .log-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 16px;
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .log-wrap::-webkit-scrollbar { width: 4px; }
+  .log-wrap::-webkit-scrollbar-thumb { background: #c8c4bc; border-radius: 2px; }
+  .log-entry { margin-bottom: 2px; }
+  .log-step { color: #4466aa; }
+  .log-action { color: #8855aa; }
+  .log-reward { color: #228866; }
+  .log-error { color: #cc5555; }
+  /* Controls */
+  .controls {
+    padding: 8px 16px;
+    border-top: 1px solid #d8d4cc;
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .controls button {
+    padding: 4px 14px;
+    background: #e8e4dc;
+    border: 1px solid #c8c4bc;
+    color: #5a5a6a;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .controls button:hover { background: #ddd8d0; }
+  .controls button.active { background: #d0ccc4; border-color: #b0acaa; }
+  .range-section {
+    padding: 8px 16px;
+    border-bottom: 1px solid #ddd8d0;
+    flex-shrink: 0;
+  }
+  .range-section h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    color: #888898;
+    margin-bottom: 6px;
+    letter-spacing: 1px;
+  }
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .range-row input[type="range"] {
+    flex: 1;
+    accent-color: #6080cc;
+    height: 4px;
+  }
+  .range-val {
+    font-size: 12px;
+    color: #5a5a6a;
+    min-width: 32px;
+    text-align: right;
+  }
+  .step-count {
+    font-size: 12px;
+    color: #4466aa;
+    line-height: 28px;
+    margin-left: auto;
+  }
+  /* Legend */
+  .legend {
+    position: absolute;
+    bottom: 12px; left: 16px;
+    font-size: 10px;
+    color: #8a8a9a;
+  }
+  .legend span { margin-right: 14px; }
+  .dot-actual { color: #3070dd; }
+  .dot-pred { color: #d05080; }
+  .dot-trail { color: #a0a0b0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="canvas-wrap">
+    <canvas id="mainCanvas"></canvas>
+    <div class="canvas-label">観測平面 (2D射影)</div>
+    <div class="legend">
+      <span class="dot-actual">● 現在位置</span>
+      <span class="dot-pred">◌ 予測位置</span>
+      <span class="dot-trail">— 軌跡</span>
+      <span style="color:#1ea064;">♪ 快(R&gt;0)</span>
+      <span style="color:#c04646;">… 不快(R&lt;0)</span>
+      <span style="color:#8a8a9a;">| 背景 = 真の報酬場（エージェントには不可視）</span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">La Vie En Rose — エージェント内部</div>
+
+    <div class="section">
+      <h3>推定パラメータ θ̂ vs 真値θ</h3>
+      <div id="thetaBars"></div>
+      <div style="font-size:9px;color:#555;margin-top:4px;">
+        <span style="color:rgba(70,120,220,0.7);">■</span> 真値
+        <span style="color:rgba(220,80,140,0.8);margin-left:8px;">■</span> 推定値
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>推定誤差の推移</h3>
+      <canvas id="errorGraph" class="error-graph" width="348" height="60"></canvas>
+    </div>
+
+    <div class="section">
+      <h3>行動選択スコア内訳</h3>
+      <table class="action-table" id="actionTable">
+        <tr><th>行動</th><th>期待報酬</th></tr>
+      </table>
+    </div>
+
+    <div class="section" style="padding-bottom:4px;">
+      <h3>ステップログ</h3>
+    </div>
+    <div class="log-wrap" id="logWrap"></div>
+
+    <div class="range-section">
+      <h3>最大探索範囲</h3>
+      <div class="range-row">
+        <span style="font-size:10px;color:#888898;">狭い</span>
+        <input type="range" id="rangeSlider" min="0.1" max="2.0" step="0.1" value="1.0">
+        <span style="font-size:10px;color:#888898;">広い</span>
+        <span class="range-val" id="rangeVal">1.0</span>
+      </div>
+      <div style="font-size:9px;color:#888898;margin-top:4px;">
+        広いほど遠くの報酬場に到達しやすい
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="btnToggle" class="active">▶ 実行中</button>
+      <button id="btnStep">1ステップ</button>
+      <button id="btnReset">リセット</button>
+      <span class="step-count" id="stepCount">Step: 0</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// La Vie En Rose — 2D Projection World Demo
+// ============================================================
+
+// --- Linear Algebra Helpers ---
+function matMul(A, B) {
+  const rows = A.length, cols = B[0].length, inner = B.length;
+  const C = Array.from({length: rows}, () => new Float64Array(cols));
+  for (let i = 0; i < rows; i++)
+    for (let j = 0; j < cols; j++)
+      for (let k = 0; k < inner; k++)
+        C[i][j] += A[i][k] * B[k][j];
+  return C;
+}
+
+function matVec(A, v) {
+  return A.map(row => row.reduce((s, a, i) => s + a * v[i], 0));
+}
+
+function vecAdd(a, b) { return a.map((v, i) => v + b[i]); }
+function vecSub(a, b) { return a.map((v, i) => v - b[i]); }
+function vecNorm(v) { return Math.sqrt(v.reduce((s, x) => s + x * x, 0)); }
+function randn() {
+  const u1 = Math.random(), u2 = Math.random();
+  return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+
+// --- World Parameters ---
+const TRUE_THETA = { r: 0.15, s: 0.98, d: 0.12 };
+
+// Projection matrix P (2×3): maps latent 3D → observed 2D
+const P = [
+  [1.0, 0.0, 0.3],
+  [0.0, 1.0, 0.5]
+];
+
+// Action lift matrix B (3×2): maps 2D action → 3D latent
+const B = [
+  [1.0, 0.0],
+  [0.0, 1.0],
+  [0.2, -0.1]
+];
+
+// Build dynamics matrix A(θ)
+function buildA(theta) {
+  const c = Math.cos(theta.r), s = Math.sin(theta.r);
+  return [
+    [theta.s * c, -theta.s * s, 0],
+    [theta.s * s,  theta.s * c,  0],
+    [0,            0,             1.0 + theta.d * 0.5]
+  ];
+}
+
+const NOISE_STD = 0.02;
+
+// Candidate actions (8 directions + stay) — base unit vectors, scaled by explorationRange
+const ACTION_LABELS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖', '·'];
+const BASE_ACTIONS = [
+  [0, -1], [0.707, -0.707], [1, 0], [0.707, 0.707],
+  [0, 1], [-0.707, 0.707], [-1, 0], [-0.707, -0.707],
+  [0, 0]
+];
+let explorationRange = 1.0;
+
+function getScaledActions() {
+  const s = 0.5 * explorationRange;
+  return BASE_ACTIONS.map(a => [a[0] * s, a[1] * s]);
+}
+
+// --- State ---
+let state, agent, history, running, stepTimer;
+
+function initState() {
+  state = {
+    s: [1.0, 0.5, 0.0],  // latent state
+    step: 0
+  };
+  agent = {
+    theta: { r: 0.0, s: 1.0, d: 0.0 },  // estimated params
+    sHat: [1.0, 0.5, 0.0],               // estimated latent state
+    lr: 0.02,
+    baseLr: 0.02,
+    threat: 0,            // threat level (0–1)
+    recentRewards: [],    // sliding window of recent actual rewards
+    recentPredErrors: []  // sliding window of reward prediction errors
+  };
+  history = {
+    observations: [],
+    predictions: [],
+    errors: [],
+    rewards: [],
+    trail: [],
+    actions: []
+  };
+}
+
+// --- Simulation ---
+function observe(s) {
+  return matVec(P, s);
+}
+
+function reward(s) {
+  // Higher frequency + spatial modulation → small, scattered reward zones
+  return Math.sin(5 * s[2] + s[0]) * Math.cos(3 * s[2] - s[1]);
+}
+
+function stepWorld(s, action) {
+  const A = buildA(TRUE_THETA);
+  const As = matVec(A, s);
+  const Ba = matVec(B, action);
+  const noise = [randn() * NOISE_STD, randn() * NOISE_STD, randn() * NOISE_STD];
+  const next = vecAdd(vecAdd(As, Ba), noise);
+  // Clamp so that the *observed* position (o = P * s) stays within screen
+  const OBS_BOUND = 2.5;
+  let obs = matVec(P, next);
+  if (Math.abs(obs[0]) > OBS_BOUND || Math.abs(obs[1]) > OBS_BOUND) {
+    // Pull latent state back: shrink toward origin until observation is in bounds
+    let scale = 1.0;
+    if (Math.abs(obs[0]) > OBS_BOUND) scale = Math.min(scale, OBS_BOUND / Math.abs(obs[0]));
+    if (Math.abs(obs[1]) > OBS_BOUND) scale = Math.min(scale, OBS_BOUND / Math.abs(obs[1]));
+    next[0] *= scale;
+    next[1] *= scale;
+    next[2] *= scale;
+  }
+  return next;
+}
+
+function predictNext(sHat, action, theta) {
+  const A = buildA(theta);
+  return vecAdd(matVec(A, sHat), matVec(B, action));
+}
+
+function evaluateActions(agent, currentObs) {
+  const actions = getScaledActions();
+  const scores = actions.map((a, i) => {
+    const sNext = predictNext(agent.sHat, a, agent.theta);
+    const oNext = observe(sNext);
+    const expectedReward = reward(sNext);
+
+    return {
+      label: ACTION_LABELS[i],
+      action: a,
+      expectedReward: expectedReward,
+      total: expectedReward
+    };
+  });
+  return scores;
+}
+
+function selectAction(scores) {
+  let best = 0;
+  for (let i = 1; i < scores.length; i++) {
+    if (scores[i].total > scores[best].total) best = i;
+  }
+  return best;
+}
+
+function learnStep(agent, prevObs, action, newObs) {
+  // Predicted observation
+  const sNextHat = predictNext(agent.sHat, action, agent.theta);
+  const oNextHat = observe(sNextHat);
+  const error = vecSub(newObs, oNextHat);
+  const errMag = vecNorm(error);
+
+  // Numerical gradient descent on theta
+  const eps = 0.001;
+  const lr = agent.lr;
+
+  for (const key of ['r', 's', 'd']) {
+    const thetaPlus = { ...agent.theta };
+    thetaPlus[key] += eps;
+    const sP = predictNext(agent.sHat, action, thetaPlus);
+    const oP = observe(sP);
+    const errP = vecNorm(vecSub(newObs, oP));
+
+    const thetaMinus = { ...agent.theta };
+    thetaMinus[key] -= eps;
+    const sM = predictNext(agent.sHat, action, thetaMinus);
+    const oM = observe(sM);
+    const errM = vecNorm(vecSub(newObs, oM));
+
+    const grad = (errP - errM) / (2 * eps);
+    agent.theta[key] -= lr * grad;
+  }
+
+  // Update estimated latent state using pseudo-inverse of P.
+  // o = P * s, error = o_actual - o_predicted = P * (s_true - s_predicted)
+  // Correction: ds = P^+ * error, where P^+ = P^T (P P^T)^{-1}
+  // For P = [[1,0,0.3],[0,1,0.5]]:
+  //   P^+ ≈ [[0.933,-0.112],[-0.112,0.813],[0.224,0.373]]
+  const ds = [
+     0.933 * error[0] - 0.112 * error[1],
+    -0.112 * error[0] + 0.813 * error[1],
+     0.224 * error[0] + 0.373 * error[1]
+  ];
+  agent.sHat = sNextHat.map((v, i) => v + ds[i]);
+
+  return { error, errMag, predicted: oNextHat };
+}
+
+function simulationStep() {
+  const currentObs = observe(state.s);
+  const r = reward(state.s);
+
+  // Agent evaluates actions
+  const scores = evaluateActions(agent, currentObs);
+  const chosenIdx = selectAction(scores);
+  const action = scores[chosenIdx].action;
+
+  // World evolves
+  const newS = stepWorld(state.s, action);
+  const newObs = observe(newS);
+
+  // Threat detection: track reward prediction errors and low reward streaks
+  const predictedReward = reward(predictNext(agent.sHat, action, agent.theta));
+  const actualReward = reward(newS);
+  const rewardPredErr = Math.abs(actualReward - predictedReward);
+
+  agent.recentRewards.push(actualReward);
+  agent.recentPredErrors.push(rewardPredErr);
+  const WIN = 10;
+  if (agent.recentRewards.length > WIN) agent.recentRewards.shift();
+  if (agent.recentPredErrors.length > WIN) agent.recentPredErrors.shift();
+
+  const avgReward = agent.recentRewards.reduce((a, b) => a + b, 0) / agent.recentRewards.length;
+  const avgPredErr = agent.recentPredErrors.reduce((a, b) => a + b, 0) / agent.recentPredErrors.length;
+
+  // Threat rises when rewards are consistently low OR reward predictions are consistently wrong
+  const lowRewardThreat = Math.max(0, 0.3 - avgReward) / 0.8;   // high when avg reward < 0.3
+  const predErrThreat = Math.min(1, avgPredErr / 0.8);           // high when prediction error is large
+  agent.threat = Math.min(1, Math.max(lowRewardThreat, predErrThreat));
+
+  // Boost learning rate under threat: up to 5x base rate
+  agent.lr = agent.baseLr * (1 + 4 * agent.threat);
+
+  // Agent learns
+  const learnResult = learnStep(agent, currentObs, action, newObs);
+
+  // Record history
+  history.observations.push(currentObs);
+  history.predictions.push(learnResult.predicted);
+  history.errors.push(learnResult.errMag);
+  history.rewards.push(r);
+  history.trail.push(currentObs);
+  history.actions.push(chosenIdx);
+
+  // Keep trail bounded
+  if (history.trail.length > 120) history.trail.shift();
+
+  state.s = newS;
+  state.step++;
+
+  // Decay base learning rate slowly
+  agent.baseLr = Math.max(0.003, agent.baseLr * 0.998);
+
+  return { scores, chosenIdx, r, errMag: learnResult.errMag, newObs, currentObs, threat: agent.threat };
+}
+
+// --- Drawing ---
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function worldToScreen(o) {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  // Zoom out as exploration range grows so agent always stays visible
+  const zoom = 0.25 / Math.max(1, explorationRange * 0.8);
+  const scale = Math.min(canvas.width, canvas.height) * zoom;
+  return [cx + o[0] * scale, cy + o[1] * scale];
+}
+
+function drawWorld(stepResult) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Grid
+  ctx.strokeStyle = '#e0dcd4';
+  ctx.lineWidth = 1;
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const zoom = 0.25 / Math.max(1, explorationRange * 0.8);
+  const scale = Math.min(canvas.width, canvas.height) * zoom;
+  for (let i = -6; i <= 6; i++) {
+    const x = cx + i * scale;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    const y = cy + i * scale;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+
+  // True reward field: for each 2D grid point, compute the TRUE z (and thus reward)
+  // the agent would have if it moved there — using the real θ, invisible to the agent.
+  {
+    const curObs = state.step > 0 ? observe(state.s) : [0, 0];
+    const trueZ = state.s[2];
+    const gridRes = 24;
+    const range = 3.5 * Math.max(1, explorationRange);
+    const cellW = (2 * range / gridRes) * scale;
+    for (let gi = 0; gi < gridRes; gi++) {
+      for (let gj = 0; gj < gridRes; gj++) {
+        const ox = -range + (2 * range * (gi + 0.5)) / gridRes;
+        const oy = -range + (2 * range * (gj + 0.5)) / gridRes;
+        // Action needed to reach this observation point
+        const ax = ox - curObs[0];
+        const ay = oy - curObs[1];
+        // True next state if agent moved here (using real dynamics)
+        const zNext = (1.0 + TRUE_THETA.d * 0.5) * trueZ + B[2][0] * ax + B[2][1] * ay;
+        const c = Math.cos(TRUE_THETA.r), sn = Math.sin(TRUE_THETA.r);
+        const xNext = TRUE_THETA.s * (c * state.s[0] - sn * state.s[1]) + ax;
+        const yNext = TRUE_THETA.s * (sn * state.s[0] + c * state.s[1]) + ay;
+        const r = reward([xNext, yNext, zNext]);
+        const [sx, sy] = worldToScreen([ox, oy]);
+        if (r > 0) {
+          const alpha = r * 0.22;
+          ctx.fillStyle = `rgba(220, 70, 120, ${alpha})`;
+        } else {
+          const alpha = Math.abs(r) * 0.15;
+          ctx.fillStyle = `rgba(100, 80, 180, ${alpha})`;
+        }
+        ctx.fillRect(sx - cellW / 2, sy - cellW / 2, cellW, cellW);
+      }
+    }
+  }
+
+  // Trail
+  if (history.trail.length > 1) {
+    for (let i = 1; i < history.trail.length; i++) {
+      const [x0, y0] = worldToScreen(history.trail[i - 1]);
+      const [x1, y1] = worldToScreen(history.trail[i]);
+      const alpha = (i / history.trail.length) * 0.4;
+      ctx.strokeStyle = `rgba(100, 120, 180, ${alpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    }
+  }
+
+  if (!stepResult) return;
+
+  // Predicted position (dashed circle)
+  if (history.predictions.length > 0) {
+    const pred = history.predictions[history.predictions.length - 1];
+    const [px, py] = worldToScreen(pred);
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = '#d05080';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Current position (solid circle)
+  const [ax, ay] = worldToScreen(stepResult.newObs);
+  const rColor = reward(state.s);
+  const hue = rColor > 0 ? 220 : 260;
+  const sat = 60 + Math.abs(rColor) * 40;
+  ctx.fillStyle = `hsl(${hue}, ${sat}%, 55%)`;
+  ctx.strokeStyle = '#3070dd';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(ax, ay, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+  // Direction arrow
+  const action = stepResult.scores[stepResult.chosenIdx].action;
+  if (vecNorm(action) > 0.01) {
+    const arrowLen = 30;
+    const angle = Math.atan2(action[1], action[0]);
+    ctx.strokeStyle = 'rgba(100, 80, 180, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax + Math.cos(angle) * arrowLen, ay + Math.sin(angle) * arrowLen);
+    ctx.stroke();
+  }
+
+  // Reward indicator
+  ctx.fillStyle = rColor > 0 ? 'rgba(30, 160, 100, 0.9)' : 'rgba(200, 70, 70, 0.7)';
+  ctx.font = '14px Courier New';
+  ctx.fillText(rColor > 0 ? '♪' : '…', ax + 14, ay - 10);
+}
+
+// --- UI Updates ---
+function updateThetaBars() {
+  const container = document.getElementById('thetaBars');
+  const params = ['r', 's', 'd'];
+  const labels = ['θ_r', 'θ_s', 'θ_d'];
+  const ranges = [
+    [-0.5, 0.5],   // r: rotation
+    [0.5, 1.5],    // s: scale
+    [-0.3, 0.3]    // d: drift
+  ];
+
+  let html = '';
+  for (let i = 0; i < params.length; i++) {
+    const key = params[i];
+    const trueVal = TRUE_THETA[key];
+    const estVal = agent.theta[key];
+    const [lo, hi] = ranges[i];
+    const truePct = Math.max(0, Math.min(100, ((trueVal - lo) / (hi - lo)) * 100));
+    const estPct = Math.max(0, Math.min(100, ((estVal - lo) / (hi - lo)) * 100));
+
+    html += `<div class="theta-row">
+      <span class="theta-label">${labels[i]}</span>
+      <div class="bar-wrap">
+        <div class="bar-true" style="width:${truePct}%"></div>
+        <div class="bar-est" style="width:${estPct}%"></div>
+      </div>
+      <span class="theta-val">${trueVal.toFixed(3)} / ${estVal.toFixed(3)}</span>
+    </div>`;
+  }
+  container.innerHTML = html;
+}
+
+function updateErrorGraph() {
+  const cvs = document.getElementById('errorGraph');
+  const gctx = cvs.getContext('2d');
+  const w = cvs.width, h = cvs.height;
+  gctx.clearRect(0, 0, w, h);
+
+  const errors = history.errors;
+  if (errors.length < 2) return;
+
+  const maxErr = Math.max(0.1, ...errors.slice(-100));
+  const data = errors.slice(-100);
+
+  gctx.strokeStyle = '#c05070';
+  gctx.lineWidth = 1.5;
+  gctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - (data[i] / maxErr) * (h - 4) - 2;
+    if (i === 0) gctx.moveTo(x, y); else gctx.lineTo(x, y);
+  }
+  gctx.stroke();
+
+  // Moving average
+  if (data.length > 5) {
+    gctx.strokeStyle = 'rgba(60, 120, 200, 0.5)';
+    gctx.lineWidth = 1;
+    gctx.beginPath();
+    const winSize = 5;
+    for (let i = winSize; i < data.length; i++) {
+      let avg = 0;
+      for (let j = i - winSize; j < i; j++) avg += data[j];
+      avg /= winSize;
+      const x = (i / (data.length - 1)) * w;
+      const y = h - (avg / maxErr) * (h - 4) - 2;
+      if (i === winSize) gctx.moveTo(x, y); else gctx.lineTo(x, y);
+    }
+    gctx.stroke();
+  }
+}
+
+function updateActionTable(scores, chosenIdx) {
+  const table = document.getElementById('actionTable');
+  let html = '<tr><th>行動</th><th>期待報酬</th></tr>';
+  for (let i = 0; i < scores.length; i++) {
+    const s = scores[i];
+    const cls = i === chosenIdx ? ' class="chosen"' : '';
+    html += `<tr${cls}>
+      <td>${s.label}${i === chosenIdx ? ' ✦' : ''}</td>
+      <td>${s.expectedReward.toFixed(3)}</td>
+    </tr>`;
+  }
+  table.innerHTML = html;
+}
+
+function addLog(stepResult) {
+  const logWrap = document.getElementById('logWrap');
+  const t = state.step;
+  const s = stepResult.scores[stepResult.chosenIdx];
+  const errStr = stepResult.errMag.toFixed(4);
+  const rStr = stepResult.r.toFixed(3);
+
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML =
+    `<span class="log-step">[${t}]</span> ` +
+    `<span class="log-action">${s.label}</span> ` +
+    `R=<span class="log-reward">${rStr}</span> ` +
+    `err=<span class="log-error">${errStr}</span> ` +
+    (agent.threat > 0.3 ? `<span style="color:#e85050;">⚠${(agent.threat*100).toFixed(0)}%</span> ` : '') +
+    `θ̂=(${agent.theta.r.toFixed(2)}, ${agent.theta.s.toFixed(2)}, ${agent.theta.d.toFixed(2)})`;
+  logWrap.appendChild(entry);
+  logWrap.scrollTop = logWrap.scrollHeight;
+
+  // Limit log entries
+  while (logWrap.children.length > 200) {
+    logWrap.removeChild(logWrap.firstChild);
+  }
+}
+
+function updateStepCount() {
+  document.getElementById('stepCount').textContent = `Step: ${state.step}`;
+}
+
+// --- Main Loop ---
+function doStep() {
+  const result = simulationStep();
+  drawWorld(result);
+  updateThetaBars();
+  updateErrorGraph();
+  updateActionTable(result.scores, result.chosenIdx);
+  addLog(result);
+  updateStepCount();
+}
+
+function start() {
+  if (stepTimer) return;
+  running = true;
+  document.getElementById('btnToggle').textContent = '⏸ 一時停止';
+  document.getElementById('btnToggle').classList.add('active');
+  stepTimer = setInterval(doStep, 800);
+}
+
+function stop() {
+  running = false;
+  document.getElementById('btnToggle').textContent = '▶ 再開';
+  document.getElementById('btnToggle').classList.remove('active');
+  clearInterval(stepTimer);
+  stepTimer = null;
+}
+
+function reset() {
+  stop();
+  initState();
+  document.getElementById('logWrap').innerHTML = '';
+  document.getElementById('actionTable').innerHTML =
+    '<tr><th>行動</th><th>期待報酬</th></tr>';
+  drawWorld(null);
+  updateThetaBars();
+  updateErrorGraph();
+  updateStepCount();
+}
+
+// --- Controls ---
+document.getElementById('btnToggle').addEventListener('click', () => {
+  running ? stop() : start();
+});
+document.getElementById('btnStep').addEventListener('click', () => {
+  if (running) stop();
+  doStep();
+});
+document.getElementById('btnReset').addEventListener('click', reset);
+document.getElementById('rangeSlider').addEventListener('input', (e) => {
+  explorationRange = parseFloat(e.target.value);
+  document.getElementById('rangeVal').textContent = explorationRange.toFixed(1);
+});
+
+// --- Init ---
+initState();
+updateThetaBars();
+drawWorld(null);
+updateStepCount();
+start();
+</script>
+</body>
+</html>
