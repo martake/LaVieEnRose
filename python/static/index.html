@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>La Vie En Rose v2 — Finite Difference vs Adjoint Method</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #f5f3f0;
+    color: #3a3a4a;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* --- Main Layout --- */
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* --- Left: Canvas --- */
+  .canvas-wrap {
+    position: relative;
+    background: #faf8f5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+  }
+  canvas { background: #faf8f5; }
+  .canvas-label {
+    position: absolute;
+    top: 12px; left: 16px;
+    font-size: 13px;
+    color: #8a8a9a;
+  }
+  .legend {
+    position: absolute;
+    bottom: 12px; left: 16px;
+    font-size: 10px;
+    color: #8a8a9a;
+  }
+  .legend span { margin-right: 14px; }
+
+  /* --- Right Panel --- */
+  .panel {
+    background: #f0eee8;
+    border-left: 1px solid #d8d4cc;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .panel-title {
+    padding: 10px 16px 8px;
+    font-size: 13px;
+    color: #5a5a6a;
+    border-bottom: 1px solid #d8d4cc;
+    flex-shrink: 0;
+  }
+  .section {
+    padding: 8px 16px;
+    border-bottom: 1px solid #ddd8d0;
+    flex-shrink: 0;
+  }
+  .section h3 {
+    font-size: 10px;
+    text-transform: uppercase;
+    color: #888898;
+    margin-bottom: 5px;
+    letter-spacing: 1px;
+  }
+
+  /* --- Theta Bars --- */
+  .agent-theta-group {
+    margin-bottom: 6px;
+  }
+  .agent-theta-label {
+    font-size: 10px;
+    font-weight: bold;
+    margin-bottom: 3px;
+  }
+  .agent-a-label { color: #3070dd; }
+  .agent-b-label { color: #e08030; }
+  .theta-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 2px;
+    font-size: 11px;
+  }
+  .theta-label {
+    width: 28px;
+    color: #666688;
+    font-size: 10px;
+  }
+  .bar-wrap {
+    flex: 1;
+    height: 12px;
+    background: #e4e0d8;
+    border-radius: 3px;
+    position: relative;
+    overflow: hidden;
+    margin: 0 6px;
+  }
+  .bar-true {
+    position: absolute;
+    height: 100%;
+    background: rgba(100, 160, 100, 0.4);
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .bar-est-a {
+    position: absolute;
+    height: 50%;
+    top: 0;
+    background: rgba(48, 112, 221, 0.6);
+    border-radius: 3px 3px 0 0;
+    transition: width 0.3s;
+  }
+  .bar-est-b {
+    position: absolute;
+    height: 50%;
+    bottom: 0;
+    background: rgba(224, 128, 48, 0.6);
+    border-radius: 0 0 3px 3px;
+    transition: width 0.3s;
+  }
+  .theta-val {
+    width: 120px;
+    font-size: 9px;
+    color: #6a6a7a;
+    text-align: right;
+  }
+  .theta-legend {
+    font-size: 9px;
+    color: #555;
+    margin-top: 3px;
+  }
+  .theta-legend span { margin-right: 8px; }
+
+  /* --- Graph canvases --- */
+  .graph-canvas {
+    width: 100%;
+    height: 56px;
+    background: #e8e4dc;
+    border-radius: 4px;
+    display: block;
+  }
+  .graph-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #999;
+    margin-top: 2px;
+  }
+
+  /* --- Log --- */
+  .log-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 16px;
+    font-size: 9px;
+    line-height: 1.5;
+    min-height: 0;
+  }
+  .log-wrap::-webkit-scrollbar { width: 4px; }
+  .log-wrap::-webkit-scrollbar-thumb { background: #c8c4bc; border-radius: 2px; }
+  .log-entry { margin-bottom: 1px; }
+  .log-step { color: #4466aa; }
+  .log-a { color: #3070dd; }
+  .log-b { color: #e08030; }
+  .log-reward { color: #228866; }
+
+  /* --- Bottom Control Bar --- */
+  .control-bar {
+    background: #eae6de;
+    border-top: 1px solid #d8d4cc;
+    padding: 8px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .control-bar button {
+    padding: 5px 14px;
+    background: #e8e4dc;
+    border: 1px solid #c8c4bc;
+    color: #5a5a6a;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .control-bar button:hover { background: #ddd8d0; }
+  .control-bar button.active { background: #d0ccc4; border-color: #b0acaa; }
+  .slider-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #5a5a6a;
+  }
+  .slider-group input[type="range"] {
+    width: 100px;
+    accent-color: #6080cc;
+    height: 4px;
+  }
+  .slider-val {
+    font-size: 11px;
+    color: #4466aa;
+    min-width: 36px;
+    text-align: right;
+  }
+  .step-count {
+    font-size: 12px;
+    color: #4466aa;
+    margin-left: auto;
+  }
+  .separator {
+    width: 1px;
+    height: 20px;
+    background: #ccc8c0;
+    margin: 0 4px;
+  }
+
+  /* --- Connection indicator --- */
+  .conn-status {
+    position: absolute;
+    top: 12px; right: 16px;
+    font-size: 10px;
+  }
+  .conn-dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  .conn-ok { background: #5a5; }
+  .conn-err { background: #c55; }
+</style>
+</head>
+<body>
+
+<div class="main">
+  <!-- Left: Main Canvas -->
+  <div class="canvas-wrap">
+    <canvas id="mainCanvas"></canvas>
+    <div class="canvas-label">観測平面 (2D射影) -- 2 agents comparison</div>
+    <div class="conn-status" id="connStatus">
+      <span class="conn-dot conn-err" id="connDot"></span>
+      <span id="connText" style="color:#8a8a9a;">disconnected</span>
+    </div>
+    <div class="legend">
+      <span style="color:#3070dd;">&#9679; Agent A (FiniteDiff)</span>
+      <span style="color:#e08030;">&#9679; Agent B (Adjoint)</span>
+      <span style="color:#6a9a60;">&#9724; 快 (R&gt;0)</span>
+      <span style="color:#8060a0;">&#9724; 不快 (R&lt;0)</span>
+      <span style="color:#8a8a9a;">| 背景 = 真の報酬場</span>
+    </div>
+  </div>
+
+  <!-- Right Panel -->
+  <div class="panel">
+    <div class="panel-title">La Vie En Rose v2 -- Agent Comparison</div>
+
+    <!-- Theta Estimation Bars -->
+    <div class="section" id="thetaSection">
+      <h3>推定パラメータ theta vs 真値</h3>
+      <div id="thetaBars"></div>
+      <div class="theta-legend">
+        <span style="color:rgba(100,160,100,0.7);">&#9632; 真値</span>
+        <span style="color:rgba(48,112,221,0.8);">&#9632; Agent A</span>
+        <span style="color:rgba(224,128,48,0.8);">&#9632; Agent B</span>
+      </div>
+    </div>
+
+    <!-- Theta Error Convergence Graph -->
+    <div class="section">
+      <h3>theta 推定誤差 ||theta_hat - theta*||</h3>
+      <canvas id="thetaErrorGraph" class="graph-canvas" width="368" height="56"></canvas>
+      <div class="graph-label">
+        <span style="color:#3070dd;">-- A (FiniteDiff)</span>
+        <span style="color:#e08030;">-- B (Adjoint)</span>
+      </div>
+    </div>
+
+    <!-- Observation Prediction Error Graph -->
+    <div class="section">
+      <h3>観測予測誤差 ||e_t||</h3>
+      <canvas id="obsErrorGraph" class="graph-canvas" width="368" height="56"></canvas>
+      <div class="graph-label">
+        <span style="color:#3070dd;">-- A</span>
+        <span style="color:#e08030;">-- B</span>
+      </div>
+    </div>
+
+    <!-- Cumulative Reward Graph -->
+    <div class="section">
+      <h3>累積報酬</h3>
+      <canvas id="rewardGraph" class="graph-canvas" width="368" height="56"></canvas>
+      <div class="graph-label">
+        <span style="color:#3070dd;">-- A</span>
+        <span style="color:#e08030;">-- B</span>
+      </div>
+    </div>
+
+    <!-- Step Log -->
+    <div class="section" style="padding-bottom:4px;">
+      <h3>ステップログ</h3>
+    </div>
+    <div class="log-wrap" id="logWrap"></div>
+  </div>
+</div>
+
+<!-- Bottom Control Bar -->
+<div class="control-bar">
+  <button id="btnToggle">&#9654; Play</button>
+  <button id="btnStep">Step</button>
+  <button id="btnReset">Reset</button>
+  <div class="separator"></div>
+  <div class="slider-group">
+    <span>Speed:</span>
+    <input type="range" id="speedSlider" min="50" max="1500" step="50" value="400">
+    <span class="slider-val" id="speedVal">400ms</span>
+  </div>
+  <div class="separator"></div>
+  <div class="slider-group">
+    <span>Window W:</span>
+    <input type="range" id="windowSlider" min="2" max="50" step="1" value="10">
+    <span class="slider-val" id="windowVal">10</span>
+  </div>
+  <div class="separator"></div>
+  <span class="step-count" id="stepCount">Step: 0</span>
+</div>
+
+<script>
+// ============================================================
+// La Vie En Rose v2 -- Finite Difference vs Adjoint Comparison
+// Real-time WebSocket UI
+// ============================================================
+
+// --- Constants ---
+const AGENT_A_COLOR = '#3070dd';
+const AGENT_A_RGBA = 'rgba(48,112,221,';
+const AGENT_B_COLOR = '#e08030';
+const AGENT_B_RGBA = 'rgba(224,128,48,';
+
+const TRAIL_MAX = 120;
+const GRAPH_MAX = 200;
+
+// World constants (must match server's world.py)
+const B_LIFT = [[1.0, 0.0], [0.0, 1.0], [0.2, -0.1]];
+
+// --- State ---
+let wsConnected = false;
+let ws = null;
+let isRunning = false;
+let currentStep = 0;
+
+// Trail histories (arrays of [x, y])
+let trailA = [];
+let trailB = [];
+
+// Graph data histories
+let thetaErrorsA = [];
+let thetaErrorsB = [];
+let obsErrorsA = [];
+let obsErrorsB = [];
+let cumRewardsA = [];
+let cumRewardsB = [];
+
+// Latest agent data
+let latestA = null;
+let latestB = null;
+let trueTheta = [0.15, 0.98, 0.12];
+
+// --- Canvas Setup ---
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  drawWorld();
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// --- World-to-Screen Mapping ---
+function worldToScreen(ox, oy) {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const scale = Math.min(canvas.width, canvas.height) * 0.18;
+  return [cx + ox * scale, cy + oy * scale];
+}
+
+function screenScale() {
+  return Math.min(canvas.width, canvas.height) * 0.18;
+}
+
+// --- Reward Field (for background visualization) ---
+function rewardFn(x, y, z) {
+  return Math.sin(5 * z + x) * Math.cos(3 * z - y);
+}
+
+// --- Draw World ---
+function drawWorld() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const scale = screenScale();
+
+  // Grid
+  ctx.strokeStyle = '#e0dcd4';
+  ctx.lineWidth = 1;
+  for (let i = -6; i <= 6; i++) {
+    const x = cx + i * scale;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    const y = cy + i * scale;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+
+  // Dynamic reward field based on true latent state (matches original HTML logic).
+  // For each grid point in observation space, compute the true next state
+  // if the agent moved there using real dynamics A(θ*), then evaluate reward.
+  // Uses Agent A's true state as the reference (both agents share the same world).
+  var trueS = (latestA && latestA.true_s) ? latestA.true_s : [1.0, 0.5, 0.0];
+  var curObs = (latestA && latestA.obs) ? latestA.obs : [0, 0];
+  var trueZ = trueS[2];
+  var tR = trueTheta[0], tS = trueTheta[1], tD = trueTheta[2];
+  var cosR = Math.cos(tR), sinR = Math.sin(tR);
+
+  var gridRes = 24;
+  var range = 3.5;
+  var cellW = (2 * range / gridRes) * scale;
+
+  for (var gi = 0; gi < gridRes; gi++) {
+    for (var gj = 0; gj < gridRes; gj++) {
+      var ox = -range + (2 * range * (gi + 0.5)) / gridRes;
+      var oy = -range + (2 * range * (gj + 0.5)) / gridRes;
+      // Action needed to reach this observation point from current position
+      var ax = ox - curObs[0];
+      var ay = oy - curObs[1];
+      // True next state if agent moved here (using real dynamics)
+      var zNext = (1.0 + tD * 0.5) * trueZ + B_LIFT[2][0] * ax + B_LIFT[2][1] * ay;
+      var xNext = tS * (cosR * trueS[0] - sinR * trueS[1]) + ax;
+      var yNext = tS * (sinR * trueS[0] + cosR * trueS[1]) + ay;
+      var r = rewardFn(xNext, yNext, zNext);
+      var p = worldToScreen(ox, oy);
+      if (r > 0) {
+        ctx.fillStyle = 'rgba(220, 70, 120, ' + (r * 0.22) + ')';
+      } else {
+        ctx.fillStyle = 'rgba(100, 80, 180, ' + (Math.abs(r) * 0.15) + ')';
+      }
+      ctx.fillRect(p[0] - cellW / 2, p[1] - cellW / 2, cellW, cellW);
+    }
+  }
+
+  // Trail A (blue)
+  drawTrail(trailA, AGENT_A_RGBA, 1.5);
+
+  // Trail B (orange)
+  drawTrail(trailB, AGENT_B_RGBA, 1.5);
+
+  // Agent positions and predictions
+  if (latestA) {
+    drawAgentPosition(latestA, AGENT_A_COLOR, AGENT_A_RGBA);
+  }
+  if (latestB) {
+    drawAgentPosition(latestB, AGENT_B_COLOR, AGENT_B_RGBA);
+  }
+}
+
+function drawTrail(trail, rgbaBase, width) {
+  if (trail.length < 2) return;
+  for (var i = 1; i < trail.length; i++) {
+    var p0 = worldToScreen(trail[i - 1][0], trail[i - 1][1]);
+    var p1 = worldToScreen(trail[i][0], trail[i][1]);
+    var alpha = (i / trail.length) * 0.5;
+    ctx.strokeStyle = rgbaBase + alpha + ')';
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(p0[0], p0[1]);
+    ctx.lineTo(p1[0], p1[1]);
+    ctx.stroke();
+  }
+}
+
+function drawAgentPosition(agent, color, rgbaBase) {
+  // Predicted position (dashed circle from prev_obs)
+  if (agent.prev_obs) {
+    var pp = worldToScreen(agent.prev_obs[0], agent.prev_obs[1]);
+    // The predicted position: if we had the predicted obs, we'd draw it
+    // Since we have current obs, draw a dashed circle at it to show prediction
+  }
+
+  // Current position (solid filled circle)
+  var cp = worldToScreen(agent.obs[0], agent.obs[1]);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Outer glow
+  ctx.strokeStyle = rgbaBase + '0.3)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cp[0], cp[1], 11, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Reward indicator
+  ctx.font = '12px Courier New';
+  if (agent.reward > 0) {
+    ctx.fillStyle = 'rgba(30, 160, 100, 0.9)';
+    ctx.fillText('\u266A', cp[0] + 14, cp[1] - 8);
+  } else {
+    ctx.fillStyle = 'rgba(200, 70, 70, 0.7)';
+    ctx.fillText('\u2026', cp[0] + 14, cp[1] - 8);
+  }
+
+  // Agent label
+  ctx.fillStyle = rgbaBase + '0.7)';
+  ctx.font = '9px Courier New';
+  ctx.fillText(agent.name === 'FiniteDiff' ? 'A' : 'B', cp[0] - 3, cp[1] + 3);
+}
+
+// --- Theta Bars ---
+function updateThetaBars() {
+  var container = document.getElementById('thetaBars');
+  var params = ['r', 's', 'd'];
+  var labels = ['\u03B8_r', '\u03B8_s', '\u03B8_d'];
+  var ranges = [
+    [-0.5, 0.5],   // r: rotation
+    [0.5, 1.5],    // s: scale
+    [-0.3, 0.3]    // d: drift
+  ];
+
+  var thetaA = latestA ? latestA.theta : [0, 1, 0];
+  var thetaB = latestB ? latestB.theta : [0, 1, 0];
+
+  var html = '';
+  for (var i = 0; i < params.length; i++) {
+    var trueVal = trueTheta[i];
+    var estA = thetaA[i];
+    var estB = thetaB[i];
+    var lo = ranges[i][0], hi = ranges[i][1];
+    var truePct = Math.max(0, Math.min(100, ((trueVal - lo) / (hi - lo)) * 100));
+    var estAPct = Math.max(0, Math.min(100, ((estA - lo) / (hi - lo)) * 100));
+    var estBPct = Math.max(0, Math.min(100, ((estB - lo) / (hi - lo)) * 100));
+
+    html += '<div class="theta-row">' +
+      '<span class="theta-label">' + labels[i] + '</span>' +
+      '<div class="bar-wrap">' +
+        '<div class="bar-true" style="width:' + truePct + '%"></div>' +
+        '<div class="bar-est-a" style="width:' + estAPct + '%"></div>' +
+        '<div class="bar-est-b" style="width:' + estBPct + '%"></div>' +
+      '</div>' +
+      '<span class="theta-val">' +
+        '<span style="color:#6a8a6a;">' + trueVal.toFixed(3) + '</span> ' +
+        '<span style="color:#3070dd;">' + estA.toFixed(3) + '</span> ' +
+        '<span style="color:#e08030;">' + estB.toFixed(3) + '</span>' +
+      '</span>' +
+    '</div>';
+  }
+  container.innerHTML = html;
+}
+
+// --- Graph Drawing ---
+function drawGraph(canvasId, dataA, dataB, options) {
+  var cvs = document.getElementById(canvasId);
+  var g = cvs.getContext('2d');
+  var w = cvs.width, h = cvs.height;
+  g.clearRect(0, 0, w, h);
+
+  if (dataA.length < 2 && dataB.length < 2) return;
+
+  var sliceA = dataA.slice(-GRAPH_MAX);
+  var sliceB = dataB.slice(-GRAPH_MAX);
+  var maxLen = Math.max(sliceA.length, sliceB.length);
+
+  // Compute y-range
+  var allVals = sliceA.concat(sliceB);
+  var minVal = options.minVal !== undefined ? options.minVal : Math.min.apply(null, allVals);
+  var maxVal = Math.max.apply(null, allVals);
+  if (maxVal === minVal) maxVal = minVal + 0.1;
+
+  // Add small padding
+  var padding = (maxVal - minVal) * 0.08;
+  var yMin = minVal - padding;
+  var yMax = maxVal + padding;
+
+  // Zero line if applicable
+  if (options.showZero && yMin < 0 && yMax > 0) {
+    var zy = h - ((0 - yMin) / (yMax - yMin)) * (h - 6) - 3;
+    g.strokeStyle = 'rgba(100,100,100,0.15)';
+    g.lineWidth = 1;
+    g.setLineDash([3, 3]);
+    g.beginPath();
+    g.moveTo(0, zy);
+    g.lineTo(w, zy);
+    g.stroke();
+    g.setLineDash([]);
+  }
+
+  // Draw line A
+  drawGraphLine(g, sliceA, maxLen, w, h, yMin, yMax, AGENT_A_COLOR, 1.5);
+
+  // Draw line B
+  drawGraphLine(g, sliceB, maxLen, w, h, yMin, yMax, AGENT_B_COLOR, 1.5);
+
+  // Current values label
+  g.font = '9px Courier New';
+  if (sliceA.length > 0) {
+    g.fillStyle = AGENT_A_COLOR;
+    g.fillText(sliceA[sliceA.length - 1].toFixed(3), 3, 10);
+  }
+  if (sliceB.length > 0) {
+    g.fillStyle = AGENT_B_COLOR;
+    g.fillText(sliceB[sliceB.length - 1].toFixed(3), 3, 20);
+  }
+}
+
+function drawGraphLine(g, data, maxLen, w, h, yMin, yMax, color, lineWidth) {
+  if (data.length < 2) return;
+  g.strokeStyle = color;
+  g.lineWidth = lineWidth;
+  g.beginPath();
+  for (var i = 0; i < data.length; i++) {
+    var x = maxLen > 1 ? (i / (maxLen - 1)) * w : w / 2;
+    var y = h - ((data[i] - yMin) / (yMax - yMin)) * (h - 6) - 3;
+    if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.stroke();
+}
+
+function updateAllGraphs() {
+  drawGraph('thetaErrorGraph', thetaErrorsA, thetaErrorsB, { minVal: 0 });
+  drawGraph('obsErrorGraph', obsErrorsA, obsErrorsB, { minVal: 0 });
+  drawGraph('rewardGraph', cumRewardsA, cumRewardsB, { showZero: true });
+}
+
+// --- Log ---
+function addLog(step, agentA, agentB) {
+  var logWrap = document.getElementById('logWrap');
+  var entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML =
+    '<span class="log-step">[' + step + ']</span> ' +
+    '<span class="log-a">A:' + agentA.action_label + ' R=' + agentA.reward.toFixed(2) + '</span> ' +
+    '<span class="log-b">B:' + agentB.action_label + ' R=' + agentB.reward.toFixed(2) + '</span> ' +
+    '<span style="color:#888;">\u0394\u03B8: A=' + agentA.theta_error.toFixed(3) + ' B=' + agentB.theta_error.toFixed(3) + '</span>';
+  logWrap.appendChild(entry);
+  logWrap.scrollTop = logWrap.scrollHeight;
+
+  // Limit log entries
+  while (logWrap.children.length > 300) {
+    logWrap.removeChild(logWrap.firstChild);
+  }
+}
+
+// --- Process Step Data ---
+function processStep(data) {
+  currentStep = data.step;
+  document.getElementById('stepCount').textContent = 'Step: ' + currentStep;
+
+  var agentA = data.agent_a;
+  var agentB = data.agent_b;
+  trueTheta = data.true_theta;
+
+  latestA = agentA;
+  latestB = agentB;
+
+  // Trails
+  trailA.push(agentA.obs);
+  trailB.push(agentB.obs);
+  if (trailA.length > TRAIL_MAX) trailA.shift();
+  if (trailB.length > TRAIL_MAX) trailB.shift();
+
+  // Graph data
+  thetaErrorsA.push(agentA.theta_error);
+  thetaErrorsB.push(agentB.theta_error);
+  obsErrorsA.push(agentA.obs_error);
+  obsErrorsB.push(agentB.obs_error);
+  cumRewardsA.push(agentA.cumulative_reward);
+  cumRewardsB.push(agentB.cumulative_reward);
+
+  // Cap graph arrays
+  if (thetaErrorsA.length > GRAPH_MAX + 20) {
+    thetaErrorsA = thetaErrorsA.slice(-GRAPH_MAX);
+    thetaErrorsB = thetaErrorsB.slice(-GRAPH_MAX);
+  }
+  if (obsErrorsA.length > GRAPH_MAX + 20) {
+    obsErrorsA = obsErrorsA.slice(-GRAPH_MAX);
+    obsErrorsB = obsErrorsB.slice(-GRAPH_MAX);
+  }
+  if (cumRewardsA.length > GRAPH_MAX + 20) {
+    cumRewardsA = cumRewardsA.slice(-GRAPH_MAX);
+    cumRewardsB = cumRewardsB.slice(-GRAPH_MAX);
+  }
+
+  // Update all UI
+  drawWorld();
+  updateThetaBars();
+  updateAllGraphs();
+  addLog(data.step, agentA, agentB);
+}
+
+// --- Reset UI ---
+function resetUI() {
+  trailA = [];
+  trailB = [];
+  thetaErrorsA = [];
+  thetaErrorsB = [];
+  obsErrorsA = [];
+  obsErrorsB = [];
+  cumRewardsA = [];
+  cumRewardsB = [];
+  latestA = null;
+  latestB = null;
+  currentStep = 0;
+  document.getElementById('stepCount').textContent = 'Step: 0';
+  document.getElementById('logWrap').innerHTML = '';
+  drawWorld();
+  updateThetaBars();
+  updateAllGraphs();
+}
+
+// --- WebSocket ---
+function connectWS() {
+  var protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var url = protocol + '//' + location.host + '/ws';
+  ws = new WebSocket(url);
+
+  ws.onopen = function() {
+    wsConnected = true;
+    document.getElementById('connDot').className = 'conn-dot conn-ok';
+    document.getElementById('connText').textContent = 'connected';
+  };
+
+  ws.onclose = function() {
+    wsConnected = false;
+    document.getElementById('connDot').className = 'conn-dot conn-err';
+    document.getElementById('connText').textContent = 'disconnected';
+    // Reconnect after delay
+    setTimeout(connectWS, 2000);
+  };
+
+  ws.onerror = function() {
+    wsConnected = false;
+  };
+
+  ws.onmessage = function(evt) {
+    var data;
+    try {
+      data = JSON.parse(evt.data);
+    } catch (e) {
+      return;
+    }
+
+    switch (data.type) {
+      case 'init':
+        isRunning = data.running;
+        currentStep = data.step;
+        updateToggleButton();
+        document.getElementById('speedSlider').value = data.speed_ms;
+        document.getElementById('speedVal').textContent = data.speed_ms + 'ms';
+        document.getElementById('windowSlider').value = data.adjoint_window;
+        document.getElementById('windowVal').textContent = data.adjoint_window;
+        document.getElementById('stepCount').textContent = 'Step: ' + data.step;
+        break;
+
+      case 'step':
+        processStep(data);
+        break;
+
+      case 'reset':
+        isRunning = data.running;
+        updateToggleButton();
+        resetUI();
+        break;
+
+      case 'status':
+        isRunning = data.running;
+        updateToggleButton();
+        break;
+
+      case 'speed':
+        document.getElementById('speedSlider').value = data.speed_ms;
+        document.getElementById('speedVal').textContent = data.speed_ms + 'ms';
+        break;
+
+      case 'window':
+        document.getElementById('windowSlider').value = data.adjoint_window;
+        document.getElementById('windowVal').textContent = data.adjoint_window;
+        break;
+    }
+  };
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+// --- Controls ---
+function updateToggleButton() {
+  var btn = document.getElementById('btnToggle');
+  if (isRunning) {
+    btn.textContent = '\u23F8 Pause';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = '\u25B6 Play';
+    btn.classList.remove('active');
+  }
+}
+
+document.getElementById('btnToggle').addEventListener('click', function() {
+  if (isRunning) {
+    send({ action: 'stop' });
+  } else {
+    send({ action: 'start' });
+  }
+});
+
+document.getElementById('btnStep').addEventListener('click', function() {
+  if (isRunning) {
+    send({ action: 'stop' });
+  }
+  send({ action: 'step' });
+});
+
+document.getElementById('btnReset').addEventListener('click', function() {
+  var w = parseInt(document.getElementById('windowSlider').value, 10);
+  send({ action: 'reset', window_size: w, seed: Math.floor(Math.random() * 100000) });
+});
+
+document.getElementById('speedSlider').addEventListener('input', function(e) {
+  var val = parseInt(e.target.value, 10);
+  document.getElementById('speedVal').textContent = val + 'ms';
+  send({ action: 'set_speed', speed_ms: val });
+});
+
+document.getElementById('windowSlider').addEventListener('input', function(e) {
+  var val = parseInt(e.target.value, 10);
+  document.getElementById('windowVal').textContent = val;
+  send({ action: 'set_window', window_size: val });
+});
+
+// --- Keyboard shortcuts ---
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case ' ':
+      e.preventDefault();
+      if (isRunning) { send({ action: 'stop' }); } else { send({ action: 'start' }); }
+      break;
+    case 's':
+      if (isRunning) send({ action: 'stop' });
+      send({ action: 'step' });
+      break;
+    case 'r':
+      var w = parseInt(document.getElementById('windowSlider').value, 10);
+      send({ action: 'reset', window_size: w, seed: Math.floor(Math.random() * 100000) });
+      break;
+  }
+});
+
+// --- Init ---
+updateThetaBars();
+drawWorld();
+updateAllGraphs();
+connectWS();
+</script>
+</body>
+</html>

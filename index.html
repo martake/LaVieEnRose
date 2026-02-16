@@ -332,6 +332,16 @@ function buildA(theta) {
   ];
 }
 
+// Analytical partial derivatives ∂A/∂θ_k
+function dA_dtheta(theta) {
+  const c = Math.cos(theta.r), s = Math.sin(theta.r);
+  return {
+    r: [[-theta.s*s, -theta.s*c, 0], [theta.s*c, -theta.s*s, 0], [0, 0, 0]],
+    s: [[c, -s, 0], [s, c, 0], [0, 0, 0]],
+    d: [[0, 0, 0], [0, 0, 0], [0, 0, 0.5]]
+  };
+}
+
 const NOISE_STD = 0.02;
 
 // Candidate actions (8 directions + stay) — base unit vectors, scaled by explorationRange
@@ -443,25 +453,22 @@ function learnStep(agent, prevObs, action, newObs) {
   const error = vecSub(newObs, oNextHat);
   const errMag = vecNorm(error);
 
-  // Numerical gradient descent on theta
-  const eps = 0.001;
+  // Analytical gradient descent on theta (direct sensitivity method)
+  // ∂||e||/∂θ_k = -(e · P · (∂A/∂θ_k · sHat)) / ||e||
   const lr = agent.lr;
 
-  for (const key of ['r', 's', 'd']) {
-    const thetaPlus = { ...agent.theta };
-    thetaPlus[key] += eps;
-    const sP = predictNext(agent.sHat, action, thetaPlus);
-    const oP = observe(sP);
-    const errP = vecNorm(vecSub(newObs, oP));
-
-    const thetaMinus = { ...agent.theta };
-    thetaMinus[key] -= eps;
-    const sM = predictNext(agent.sHat, action, thetaMinus);
-    const oM = observe(sM);
-    const errM = vecNorm(vecSub(newObs, oM));
-
-    const grad = (errP - errM) / (2 * eps);
-    agent.theta[key] -= lr * grad;
+  if (errMag > 1e-10) {
+    const dA = dA_dtheta(agent.theta);
+    for (const key of ['r', 's', 'd']) {
+      // dA[key] · sHat (3×3 matrix × 3-vector → 3-vector)
+      const dAs = matVec(dA[key], agent.sHat);
+      // P · dAs (2×3 matrix × 3-vector → 2-vector)
+      const PdAs = matVec(P, dAs);
+      // e · PdAs (dot product → scalar)
+      const ePdAs = error[0] * PdAs[0] + error[1] * PdAs[1];
+      const grad = -ePdAs / errMag;
+      agent.theta[key] -= lr * grad;
+    }
   }
 
   // Update estimated latent state using pseudo-inverse of P.
